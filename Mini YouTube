@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Mimi YouTube 🎬</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; background: #f9f9f9; color: #111; }
+    header { background: #fff; display: flex; justify-content: space-between; align-items: center; padding: 10px 20px; border-bottom: 1px solid #ddd; }
+    header h1 { color: #ff0000; }
+    #searchBar { padding: 6px; width: 250px; }
+    button { background: red; border: none; color: white; padding: 8px 15px; border-radius: 6px; cursor: pointer; }
+    main { padding: 20px; }
+    .video-card { background: #fff; border: 1px solid #ddd; border-radius: 8px; margin: 10px 0; padding: 10px; }
+    .video-card video { width: 100%; border-radius: 6px; }
+    .actions { display: flex; gap: 10px; margin-top: 5px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Mimi YouTube</h1>
+    <input type="text" id="searchBar" placeholder="Search videos...">
+    <button id="authBtn">Login</button>
+  </header>
+
+  <main>
+    <h2>Discover Videos</h2>
+    <input type="file" id="uploadVideo" accept="video/*" style="margin:10px 0;"/>
+    <div id="video-feed"></div>
+  </main>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-storage.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyG5YF6GcqwmuZdH4EKfpVEQ6A_2HVtAmZY",
+      authDomain: "mimi-77432.firebaseapp.com",
+      projectId: "mimi-77432",
+      storageBucket: "mimi-77432.firebasestorage.app",
+      messagingSenderId: "142874627587",
+      appId: "1:142874627587:web:4245144d733d6e04600836"
+    };
+
+    const app = firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+    const storage = firebase.storage();
+
+    const authBtn = document.getElementById("authBtn");
+    const uploadInput = document.getElementById("uploadVideo");
+    const feed = document.getElementById("video-feed");
+    const searchBar = document.getElementById("searchBar");
+
+    authBtn.onclick = () => {
+      if (auth.currentUser) auth.signOut();
+      else auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+    };
+
+    auth.onAuthStateChanged(user => { authBtn.innerText = user ? "Logout" : "Login"; });
+
+    uploadInput.addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file || !auth.currentUser) return alert("Login first!");
+      const ref = storage.ref('videos/' + Date.now() + "-" + file.name);
+      await ref.put(file);
+      const url = await ref.getDownloadURL();
+      await db.collection("videos").add({
+        url,
+        title: file.name,
+        user: auth.currentUser.displayName || "Anonymous",
+        likes: 0,
+        subscribers: [],
+        created: Date.now()
+      });
+      alert("Video uploaded!");
+    });
+
+    async function likeVideo(id) {
+      const ref = db.collection("videos").doc(id);
+      await ref.update({ likes: firebase.firestore.FieldValue.increment(1) });
+    }
+
+    async function subscribeChannel(id, userEmail) {
+      const ref = db.collection("videos").doc(id);
+      await ref.update({ subscribers: firebase.firestore.FieldValue.arrayUnion(userEmail) });
+    }
+
+    function loadVideos(query="") {
+      db.collection("videos").orderBy("created","desc").onSnapshot(snapshot => {
+        feed.innerHTML = "";
+        snapshot.forEach(doc => {
+          const v = doc.data();
+          if (!v.title.toLowerCase().includes(query.toLowerCase())) return;
+          const card = document.createElement("div");
+          card.className = "video-card";
+          card.innerHTML = `
+            <video controls>
+              <source src="${v.url}" type="video/mp4">
+            </video>
+            <h3>${v.title}</h3>
+            <p>by ${v.user}</p>
+            <div class="actions">
+              <button onclick="likeVideo('${doc.id}')">👍 Like (${v.likes || 0})</button>
+              <button onclick="subscribeChannel('${doc.id}', '${auth.currentUser?.email || ''}')">🔔 Subscribe (${v.subscribers?.length || 0})</button>
+            </div>
+          `;
+          feed.appendChild(card);
+        });
+      });
+    }
+
+    searchBar.addEventListener("input", e => loadVideos(e.target.value));
+    loadVideos();
+  </script>
+</body>
+</html>
